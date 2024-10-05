@@ -1,0 +1,522 @@
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="viewport" content="width=device-width, initial-scale=1.0">
+    <title>אוסף סמלים אטומיים</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background-color: #e6f3ff;
+        }
+        #startScreen, #gameScreen, #levelTransitionScreen, #failScreen, #endScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        #startScreen {
+            background-image: url('https://www.cjoint.com/doc/24_09/NIkwHUfKgo6_0911.png');
+            background-size: cover;
+            background-position: center;
+        }
+        #gameScreen {
+            display: none;
+            position: relative;
+        }
+        .button {
+            padding: 15px 30px;
+            font-size: 20px;
+            background-color: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        #player {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background-image: url('https://www.cjoint.com/doc/24_09/NIjpQMgT6i6_0909.png');
+            background-size: cover;
+            transition: all 0.1s;
+        }
+        .atom {
+            position: absolute;
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            font-size: 18px;
+            color: white;
+        }
+        #timeScore, #levelInfo {
+            position: absolute;
+            font-size: 18px;
+            font-weight: bold;
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.7);
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        #timeScore { top: 10px; right: 10px; }
+        #levelInfo { top: 10px; left: 10px; }
+        #levelTransitionScreen img {
+            max-width: 100%;
+            height: auto;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: grid;
+            grid-template-columns: repeat(3, 60px);
+            grid-template-rows: repeat(2, 60px);
+            gap: 10px;
+        }
+        .control-button {
+            width: 60px;
+            height: 60px;
+            font-size: 24px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+        }
+        #upButton { grid-column: 2; grid-row: 1; }
+        #leftButton { grid-column: 1; grid-row: 2; }
+        #downButton { grid-column: 2; grid-row: 2; }
+        #rightButton { grid-column: 3; grid-row: 2; }
+        
+        @media (min-width: 768px) {
+            #controls {
+                display: none;
+            }
+        }
+        .fireworks {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            z-index: 999;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="startScreen">
+            <h1>אוסף סמלים אטומיים</h1>
+            <button id="startButton" class="button">התחל</button>
+        </div>
+        <div id="gameScreen">
+            <div id="timeScore">ניקוד: 0 | זמן: 0</div>
+            <div id="levelInfo">שלב: 1</div>
+            <div id="player"></div>
+            <div id="controls">
+                <button class="control-button" id="upButton">↑</button>
+                <button class="control-button" id="leftButton">←</button>
+                <button class="control-button" id="downButton">↓</button>
+                <button class="control-button" id="rightButton">→</button>
+            </div>
+        </div>
+        <div id="levelTransitionScreen" style="display:none;">
+            <img src="https://www.cjoint.com/doc/24_09/NICf4N6hiO6_2.png" alt="שלב הושלם">
+            <h2>השלב הושלם!</h2>
+            <button id="nextLevelButton" class="button">שלב הבא</button>
+        </div>
+        <div id="failScreen" style="display:none;">
+            <h2>לא הגעת לניקוד הנדרש</h2>
+            <button id="retryButton" class="button">נסה שנית</button>
+        </div>
+        <div id="endScreen" style="display:none;">
+            <h2>סיימת את כל השלבים!</h2>
+            <button id="restartButton" class="button">שחק שוב</button>
+        </div>
+        <canvas class="fireworks" id="fireworksCanvas"></canvas>
+
+        <!-- צלילים -->
+        <audio id="positiveSound" src="positivesound.mp3"></audio>
+        <audio id="negativeSound" src="negativesound.mp3"></audio>
+    </div>
+
+    <script>
+    let gameState = {
+        score: 0,
+        playerPosition: { x: window.innerWidth / 2 - 30, y: window.innerHeight / 2 - 30 },
+        atoms: [],
+        currentLevel: 0,
+        timeLeft: 0,
+        gameInterval: null,
+        movementInterval: null
+    };
+
+    const levels = [
+        { duration: 45, targetScore: 10 },
+        { duration: 35, targetScore: 10 },
+        { duration: 25, targetScore: 10 }
+    ];
+
+    const validSymbols = ['H', 'O', 'N', 'K', 'Na', 'Li', 'F', 'Be', 'Mg', 'Ca', 'He', 'Cl', 'Br', 'I', 'S', 'Se', 'P'];
+    const invalidSymbols = ['A', 'Da', 'Cg', 'nE', 'aR', 'cU', 'nI', 'Kb', 'Lz', 'Vz', 'cA', 'sE', 'MG', 'BR', 'rB', 'eS', 'Pp', 'MO', 'nb', 'TC', 'pD', 'SR', 'bA', 'Sia', 'Cdy'];
+
+    function startGame() {
+        document.getElementById('startScreen').style.display = 'none';
+        document.getElementById('gameScreen').style.display = 'block';
+
+        resetGameState();
+        startLevel();
+    }
+
+    function resetGameState() {
+        gameState.score = 0;
+        gameState.playerPosition = { x: window.innerWidth / 2 - 30, y: window.innerHeight / 2 - 30 };
+        gameState.atoms = [];
+        gameState.timeLeft = levels[gameState.currentLevel].duration;
+        updatePlayerPosition();
+        updateScore();
+        updateLevelInfo();
+    }
+
+    function startLevel() {
+        clearInterval(gameState.gameInterval);
+        gameState.score = 0;
+        gameState.timeLeft = levels[gameState.currentLevel].duration;
+        updateLevelInfo();
+        createAtoms();
+        gameState.gameInterval = setInterval(updateTimer, 1000);
+    }
+
+    function createAtoms() {
+        const gameScreen = document.getElementById('gameScreen');
+        gameState.atoms.forEach(atom => gameScreen.removeChild(atom));
+        gameState.atoms = [];
+
+        const atomCount = 21; // Total number of atoms
+        const minValidAtoms = 11;
+        const minInvalidAtoms = 10;
+
+        let validAtomsCreated = 0;
+        let invalidAtomsCreated = 0;
+
+        for (let i = 0; i < atomCount; i++) {
+            let atom;
+            let isValidPosition = false;
+
+            while (!isValidPosition) {
+                atom = document.createElement('div');
+                atom.className = 'atom';
+                atom.style.backgroundColor = getRandomColor();
+                
+                if (validAtomsCreated < minValidAtoms) {
+                    atom.textContent = validSymbols[Math.floor(Math.random() * validSymbols.length)];
+                    validAtomsCreated++;
+                } else if (invalidAtomsCreated < minInvalidAtoms) {
+                    atom.textContent = invalidSymbols[Math.floor(Math.random() * invalidSymbols.length)];
+                    invalidAtomsCreated++;
+                } else {
+                    if (Math.random() > 0.5) {
+                        atom.textContent = validSymbols[Math.floor(Math.random() * validSymbols.length)];
+                    } else {
+                        atom.textContent = invalidSymbols[Math.floor(Math.random() * invalidSymbols.length)];
+                    }
+                }
+
+                const x = Math.floor(Math.random() * (window.innerWidth - 70));
+                const y = Math.floor(Math.random() * (window.innerHeight - 70));
+
+                atom.style.left = `${x}px`;
+                atom.style.top = `${y}px`;
+
+                if (!isOverlapping(atom, gameState.atoms) && !isInForbiddenArea(x, y)) {
+                    isValidPosition = true;
+                    gameState.atoms.push(atom);
+                    gameScreen.appendChild(atom);
+                }
+            }
+        }
+    }
+
+    function isOverlapping(newAtom, existingAtoms) {
+        const newRect = newAtom.getBoundingClientRect();
+
+        for (let atom of existingAtoms) {
+            const rect = atom.getBoundingClientRect();
+            if (!(newRect.right < rect.left || 
+                newRect.left > rect.right || 
+                newRect.bottom < rect.top || 
+                newRect.top > rect.bottom)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function isInForbiddenArea(x, y) {
+        const forbiddenAreas = [
+            { x: gameState.playerPosition.x - 50, y: gameState.playerPosition.y - 50, width: 140, height: 140 },
+            { x: window.innerWidth / 2 - 90, y: window.innerHeight - 200, width: 180, height: 200 },
+            { x: window.innerWidth / 2 - 150, y: 0, width: 300, height: 100 } // אזור כפתורי השליטה וצג הניקוד
+        ];
+
+        for (let area of forbiddenAreas) {
+            if (x < area.x + area.width &&
+                x + 70 > area.x &&
+                y < area.y + area.height &&
+                y + 70 > area.y) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function getRandomColor() {
+        const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#F1948A', '#82E0AA', '#5DADE2'];
+        return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    function updateScore() {
+        document.getElementById('timeScore').textContent = `ניקוד: ${gameState.score} | זמן: ${gameState.timeLeft}`;
+    }
+
+    function updateLevelInfo() {
+        document.getElementById('levelInfo').textContent = `שלב: ${gameState.currentLevel + 1}`;
+    }
+
+    function updateTimer() {
+        gameState.timeLeft--;
+        updateScore();
+
+        if (gameState.timeLeft <= 0) {
+            clearInterval(gameState.gameInterval);
+            if (gameState.score >= levels[gameState.currentLevel].targetScore) {
+                if (gameState.currentLevel < levels.length - 1) {
+                    showLevelTransitionScreen();
+                } else {
+                    endGame();
+                }
+            } else {
+                showFailScreen();
+            }
+        }
+    }
+
+    function checkCollision() {
+        const playerRect = document.getElementById('player').getBoundingClientRect();
+        const positiveSound = document.getElementById('positiveSound');
+        const negativeSound = document.getElementById('negativeSound');
+
+        gameState.atoms = gameState.atoms.filter(atom => {
+            const atomRect = atom.getBoundingClientRect();
+            if (!(playerRect.right < atomRect.left || 
+                  playerRect.left > atomRect.right || 
+                  playerRect.bottom < atomRect.top || 
+                  playerRect.top > atomRect.bottom)) {
+                const gameScreen = document.getElementById('gameScreen');
+                gameScreen.removeChild(atom);
+                
+                if (validSymbols.includes(atom.textContent)) {
+                    gameState.score++;
+                    playSound(positiveSound);
+                } else {
+                    gameState.score = Math.max(0, gameState.score - 1);
+                    playSound(negativeSound);
+                }
+                
+                updateScore();
+                if (gameState.score >= levels[gameState.currentLevel].targetScore) {
+                    clearInterval(gameState.gameInterval);
+                    if (gameState.currentLevel < levels.length - 1) {
+                        showLevelTransitionScreen();
+                    } else {
+                        endGame();
+                    }
+                }
+                return false;
+            }
+            return true;
+        });
+    }
+
+    function playSound(sound) {
+        if (sound && sound.readyState >= 2) {
+            sound.currentTime = 0;
+            sound.play().catch((e) => {
+                console.log("שגיאה בהפעלת הצליל:", e);
+            });
+        }
+    }
+
+    function showLevelTransitionScreen() {
+        document.getElementById('gameScreen').style.display = 'none';
+        document.getElementById('failScreen').style.display = 'none';
+        document.getElementById('levelTransitionScreen').style.display = 'flex';
+    }
+
+    function showFailScreen() {
+        document.getElementById('gameScreen').style.display = 'none';
+        document.getElementById('levelTransitionScreen').style.display = 'none';
+        document.getElementById('failScreen').style.display = 'flex';
+    }
+
+    function endGame() {
+        document.getElementById('gameScreen').style.display = 'none';
+        document.getElementById('levelTransitionScreen').style.display = 'none';
+        document.getElementById('failScreen').style.display = 'none';
+        document.getElementById('endScreen').style.display = 'flex';
+        startFireworks();
+    }
+
+    function movePlayer(direction) {
+        const speed = 10;
+        switch (direction) {
+            case 'ArrowUp':
+            case 'Up':
+                gameState.playerPosition.y = Math.max(0, gameState.playerPosition.y - speed);
+                break;
+            case 'ArrowDown':
+            case 'Down':
+                gameState.playerPosition.y = Math.min(window.innerHeight - 60, gameState.playerPosition.y + speed);
+                break;
+            case 'ArrowLeft':
+            case 'Left':
+                gameState.playerPosition.x = Math.max(0, gameState.playerPosition.x - speed);
+                break;
+            case 'ArrowRight':
+            case 'Right':
+                gameState.playerPosition.x = Math.min(window.innerWidth - 60, gameState.playerPosition.x + speed);
+                break;
+        }
+        updatePlayerPosition();
+    }
+
+    function updatePlayerPosition() {
+        const player = document.getElementById('player');
+        player.style.left = `${gameState.playerPosition.x}px`;
+        player.style.top = `${gameState.playerPosition.y}px`;
+        checkCollision();
+    }
+
+    function initializeControls() {
+        document.addEventListener('keydown', (event) => {
+            movePlayer(event.key);
+        });
+
+        document.getElementById('upButton').addEventListener('touchstart', () => startMovingPlayer('ArrowUp'));
+        document.getElementById('upButton').addEventListener('touchend', stopMovingPlayer);
+
+        document.getElementById('downButton').addEventListener('touchstart', () => startMovingPlayer('ArrowDown'));
+        document.getElementById('downButton').addEventListener('touchend', stopMovingPlayer);
+
+        document.getElementById('leftButton').addEventListener('touchstart', () => startMovingPlayer('ArrowLeft'));
+        document.getElementById('leftButton').addEventListener('touchend', stopMovingPlayer);
+
+        document.getElementById('rightButton').addEventListener('touchstart', () => startMovingPlayer('ArrowRight'));
+        document.getElementById('rightButton').addEventListener('touchend', stopMovingPlayer);
+    }
+
+    function startMovingPlayer(direction) {
+        movePlayer(direction);
+        gameState.movementInterval = setInterval(() => movePlayer(direction), 100);
+    }
+
+    function stopMovingPlayer() {
+        clearInterval(gameState.movementInterval);
+    }
+
+    function startFireworks() {
+        const canvas = document.getElementById('fireworksCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let particles = [];
+
+        function createParticle(x, y) {
+            const particle = {
+                x: x,
+                y: y,
+                size: Math.random() * 4 + 1,
+                speedX: (Math.random() - 0.5) * 5,
+                speedY: (Math.random() - 0.5) * 5,
+                color: `hsl(${Math.random() * 360}, 100%, 50%)`,
+                life: 100
+            };
+            particles.push(particle);
+        }
+
+        function animateFireworks() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            particles.forEach((particle, index) => {
+                particle.x += particle.speedX;
+                particle.y += particle.speedY;
+                particle.life--;
+
+                if (particle.life <= 0) {
+                    particles.splice(index, 1);
+                }
+
+                ctx.fillStyle = particle.color;
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            if (particles.length > 0) {
+                requestAnimationFrame(animateFireworks);
+            }
+        }
+
+        for (let i = 0; i < 50; i++) {
+            createParticle(Math.random() * canvas.width, Math.random() * canvas.height);
+        }
+
+        animateFireworks();
+    }
+
+    document.getElementById('startButton').addEventListener('click', startGame);
+    document.getElementById('nextLevelButton').addEventListener('click', () => {
+        document.getElementById('levelTransitionScreen').style.display = 'none';
+        document.getElementById('gameScreen').style.display = 'block';
+        gameState.currentLevel++;
+        startLevel();
+    });
+    document.getElementById('retryButton').addEventListener('click', () => {
+        document.getElementById('failScreen').style.display = 'none';
+        document.getElementById('gameScreen').style.display = 'block';
+        startLevel();
+    });
+    document.getElementById('restartButton').addEventListener('click', () => {
+        document.getElementById('endScreen').style.display = 'none';
+        gameState.currentLevel = 0;
+        startGame();
+    });
+
+    document.addEventListener('DOMContentLoaded', initializeControls);
+    </script>
+</body>
+</html>
